@@ -1,0 +1,95 @@
+# OS cruft
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editors / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*.iml
+
+# Build trees (out-of-source recommended)
+build/
+build-*/
+build-pi/
+_build/
+cmake-build-*/
+out/
+bin/
+lib/
+*_artefacts/
+dist/
+
+# Pi images (large binary files)
+*.img
+
+# CMake files (will live inside build/, but ignore if generated elsewhere)
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+install_manifest.txt
+CTestTestfile.cmake
+Testing/
+Makefile
+compile_commands.json
+
+# CPM / FetchContent caches & deps
+cpm-cache/
+**/cpm-cache/
+_deps/
+**/_deps/
+**/CPM_*.cmake
+
+.cache/
+
+# Tracktion Engine / JUCE generated
+JuceLibraryCode/
+*.jucer
+juceaide
+juce_*_helper
+juce_*_BinaryData/
+
+# Logs / dumps
+*.log
+*.dmp
+core
+core.*
+
+# Archives
+*.zip
+*.tar
+*.tar.gz
+*.7z
+
+# Python virtual environments
+.venv/
+__pycache__/
+*.py[cod]
+
+# (Optional) Node stuff if you add scripts later
+node_modules/
+
+.ccache/
+.mcp.json
+.gemini/
+
+pi-tools/output/
+pi-tools/work/
+
+*.gcovr
+*.gdb
+# Compiled mpi CLI binary (built via scripts/build-cli.sh)
+/mpi
+/mpi@maschinepi.local
+
+# Claude Code session data
+.claude/
+
+# Git worktrees
+.worktrees/
+
+# Internal planning/history — kept local, not published
+Auto Run Docs/
+docs/superpowers/

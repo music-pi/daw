@@ -1,0 +1,38 @@
+# System packages required for maschinepi on Raspberry Pi
+# These will be installed via apt-get inside the chroot
+
+# Audio system (PipeWire)
+pipewire
+pipewire-alsa
+pipewire-jack
+pipewire-pulse
+wireplumber
+libpipewire-0.3-dev
+
+# ALSA (for compatibility)
+libasound2
+libasound2-dev
+
+# USB device access (for MK3 controller)
+libusb-1.0-0
+libusb-1.0-0-dev
+
+# Build tools (for compiling maschinepi and mk3-boot-display)
+build-essential
+cmake
+git
+pkg-config
+ninja-build
+
+# Runtime dependencies
+libc6-dev
+libstdc++6
+
+# System utilities
+systemd
+udev
+
+# Optional: Development tools (can be removed for smaller image)
+# vim
+# htop
+

@@ -1,0 +1,8 @@
+# Pi images (large binary files)
+*.img
+*.img.xz
+*.img.gz
+
+# Build artifacts
+output/
+work/

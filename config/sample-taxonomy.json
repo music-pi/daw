@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "loop": {
+    "minDurationSec": 2.0,
+    "keywords": ["loop", "groove", "phrase"]
+  },
+  "oneShot": {
+    "keywords": ["one shot", "oneshot", "one-shot", "hit", "stab"]
+  },
+  "instrumentTypes": {
+    "drum": ["drum", "kit", "perc"],
+    "bass": ["bass", "808", "sub"],
+    "key": ["key", "keys", "piano", "synth", "pad", "lead", "chord"],
+    "vocal": ["vox", "vocal", "acapella"],
+    "fx": ["fx", "riser", "sweep", "impact"]
+  },
+  "subTypes": {
+    "kick": ["kick", "bd", "bassdrum"],
+    "snare": ["snare", "sd", "rim"],
+    "hat": ["hat", "hh", "hihat"],
+    "clap": ["clap", "clp"],
+    "tom": ["tom"],
+    "cymbal": ["crash", "ride", "cymbal"],
+    "perc": ["perc", "shaker", "conga", "bongo"]
+  },
+  "bpmRegex": "(?:^|[^0-9])(\\d{2,3})\\s?bpm|_(\\d{2,3})(?:_|$)",
+  "keyRegex": "(?:^|[_\\-\\s])([A-Ga-g](?:#|b)?)(maj|min|m)(?:[_\\-\\s.]|$)"
+}

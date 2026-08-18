@@ -1,0 +1,31 @@
+[Unit]
+Description=MK3 Boot Display - Shows boot progress on Maschine MK3 screens
+Documentation=https://github.com/music-pi/daw
+
+# Start as early as possible, after udev has settled USB devices
+DefaultDependencies=no
+After=systemd-udev-settle.service
+Before=sysinit.target
+
+# Keep running until maschinepi takes over the display
+Conflicts=maschinepi.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/mk3-boot-display
+Restart=on-failure
+RestartSec=2
+
+# Run early - root access for USB
+User=root
+
+# Allow USB device access
+PrivateDevices=no
+ProtectSystem=false
+
+# Journal output
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=sysinit.target

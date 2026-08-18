@@ -1,0 +1,35 @@
+[Unit]
+Description=MaschinePI DAW Application
+Documentation=https://github.com/music-pi/daw
+After=network.target sound.target mk3-boot-display.service mk3-boot-listener.service
+Wants=sound.target
+Requires=mk3-boot-listener.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/maschinepi-launcher.sh
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Realtime audio optimizations
+Nice=-10
+IOSchedulingClass=realtime
+IOSchedulingPriority=0
+CPUSchedulingPolicy=fifo
+CPUSchedulingPriority=50
+
+# Security and permissions
+User=mpi
+Group=audio
+SupplementaryGroups=pipewire plugdev
+
+# Allow USB device access for MK3 controller
+PrivateDevices=no
+
+# Environment
+Environment="PIPEWIRE_RUNTIME_DIR=/run/user/1000"
+
+[Install]
+WantedBy=multi-user.target

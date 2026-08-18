@@ -1,0 +1,24 @@
+[Unit]
+Description=MK3 Boot Listener - Detects boot skip sequence
+Documentation=man:mk3-boot-listener(1)
+After=systemd-udev-settle.service
+Before=maschinepi.service
+Wants=systemd-udev-settle.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/mk3-boot-listener
+StandardOutput=journal
+StandardError=journal
+TimeoutSec=15
+
+# Run as audio group to access USB device
+Group=audio
+SupplementaryGroups=plugdev
+
+# Allow USB device access
+PrivateDevices=no
+
+[Install]
+WantedBy=maschinepi.service
+

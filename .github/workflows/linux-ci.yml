@@ -1,0 +1,72 @@
+name: Linux CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Headless build and tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+
+    steps:
+      - name: Check out recursively
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            build-essential \
+            ca-certificates \
+            ccache \
+            cmake \
+            libasound2-dev \
+            libfreetype6-dev \
+            libgl1-mesa-dev \
+            libjack-jackd2-dev \
+            libusb-1.0-0-dev \
+            libx11-dev \
+            libxcursor-dev \
+            libxinerama-dev \
+            libxrandr-dev \
+            ninja-build \
+            pkg-config
+
+      - name: Restore compiler cache
+        uses: actions/cache@v5
+        with:
+          path: .ccache
+          key: ccache-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('CMakeLists.txt', 'cmake/**', 'tools/mpi/**', '.gitmodules') }}
+          restore-keys: |
+            ccache-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Build development CLI
+        run: ./scripts/build-cli.sh
+
+      - name: Build headless application
+        run: ./mpi build headless
+
+      - name: Run tests
+        run: ./mpi test
+
+      - name: Show compiler cache statistics
+        if: always()
+        run: CCACHE_DIR="${CCACHE_DIR}/headless" ccache --show-stats

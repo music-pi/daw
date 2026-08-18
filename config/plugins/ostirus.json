@@ -1,0 +1,26 @@
+{
+    "_comment": "OsTIRus (Access Virus TI emulator). Preset dumps are Virus SysEx; we scan the user's .syx library and inject each DUMP_SINGLE frame through the owning track. Source: https://theusualsuspects.io/technical/osirus-c",
+
+    "match": {
+        "name": "OsTIRus*"
+    },
+
+    "presets": {
+        "source": "file_scan",
+        "glob": "~/.local/share/OsTIRus/**/*.syx",
+        "file_type": "sysex"
+    },
+
+    "pinned": [
+        { "name_match": "Cutoff",       "label": "Cutoff"   },
+        { "name_match": "Resonance",    "label": "Res"      },
+        { "name_match": "Env Amount",   "label": "Env Amt"  },
+        { "name_match": "Attack",       "label": "Attack"   },
+        { "name_match": "Decay",        "label": "Decay"    },
+        { "name_match": "Sustain",      "label": "Sustain"  },
+        { "name_match": "Release",      "label": "Release"  },
+        { "name_match": "LFO 1 Rate",   "label": "LFO Rate" },
+        { "name_match": "Osc 1 Shape",  "label": "Osc Shape"},
+        { "name_match": "Patch Volume", "label": "Volume"   }
+    ]
+}

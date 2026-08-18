@@ -1,0 +1,22 @@
+[Unit]
+Description=MaschinePI First-Boot Setup
+Documentation=https://github.com/music-pi/daw
+After=network-online.target
+Wants=network-online.target
+Before=maschinepi.service mk3-boot-display.service
+
+# Only run once - will disable itself after completion
+ConditionPathExists=/opt/maschinepi/first-boot.sh
+
+[Service]
+Type=oneshot
+ExecStart=/opt/maschinepi/first-boot.sh
+StandardOutput=journal+console
+StandardError=journal+console
+TimeoutStartSec=600
+
+# Run as root for package installation
+User=root
+
+[Install]
+WantedBy=multi-user.target

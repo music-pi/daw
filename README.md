@@ -23,7 +23,7 @@ explicitly working on legacy desktop behaviour.
 
 The easiest way to run MusicPI on a Raspberry Pi + Maschine MK3 is the
 prebuilt appliance image from
-[music-pi/mpi-station](https://github.com/music-pi/mpi-station) — one flashable image that
+[music-pi/music-pi](https://github.com/music-pi/music-pi) — one flashable image that
 boots into MusicPI or MixxxDJ, chosen at boot. Most users should start there.
 The instructions below are for building and developing MusicPI from source.
 
@@ -40,7 +40,8 @@ Clone recursively, build the small `mpi` development CLI, then run every
 remaining command from the repository root:
 
 ```bash
-git clone --recursive https://github.com/music-pi/daw.git
+git -c url.https://github.com/.insteadOf=git@github.com: clone --recursive \
+  https://github.com/music-pi/daw.git
 cd daw
 ./scripts/build-cli.sh
 ./mpi build headless
@@ -136,12 +137,12 @@ The `docs/` guides above and the current source are authoritative.
 
 ## Related projects
 
-- [MusicPI Station](https://github.com/music-pi/mpi-station) — the integrator that fuses
+- [MusicPI Station](https://github.com/music-pi/music-pi) — the integrator that fuses
   the DAW and DJ modes into a single flashable Raspberry Pi image.
 - [libmk3](https://github.com/music-pi/libmk3) — the shared C driver for the MK3
   hardware, consumed here as a pinned submodule.
-- **mixxx-mk3** — MK3 support for the Mixxx DJ software; the other half of the
-  dual-mode rig. _Link to be added on repo publication._
+- [Mixxx MK3](https://github.com/music-pi/mixxx-mk3) — MK3 support for the
+  Mixxx DJ software; the other half of the dual-mode rig.
 
 ## License
 

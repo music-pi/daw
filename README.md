@@ -36,14 +36,20 @@ example).
 
 ## Quick start
 
-Clone recursively, build the small `mpi` development CLI, then run every
-remaining command from the repository root:
+Clone the repository and run the development setup script. It installs the
+Ubuntu/Debian build dependencies, initialises all submodules, and builds the
+small `mpi` development CLI. Run every remaining command from the repository
+root:
 
 ```bash
+<<<<<<< HEAD
 git -c url.https://github.com/.insteadOf=git@github.com: clone --recursive \
   https://github.com/music-pi/daw.git
+=======
+git clone https://github.com/music-pi/daw.git
+>>>>>>> 64114d3 (updated readme added setup dev script)
 cd daw
-./scripts/build-cli.sh
+./scripts/setup-dev.sh
 ./mpi build headless
 ./mpi test
 ./mpi run
@@ -92,17 +98,15 @@ semitone and Shift+Pads 15/16 move by an octave.
 Ubuntu/Debian:
 
 ```bash
-sudo apt install build-essential cmake pkg-config \
-  ca-certificates libasound2-dev libjack-jackd2-dev \
-  libusb-1.0-0-dev \
-  libfreetype6-dev libx11-dev libxrandr-dev libxinerama-dev \
-  libxcursor-dev libgl1-mesa-dev
+./scripts/setup-dev.sh
 ```
 
-Initialise the Tracktion Engine submodule if it is not already present:
+The script is safe to rerun. To manage system packages, submodules, or the
+development CLI separately, use its optional skip flags:
 
 ```bash
-git submodule update --init --recursive
+./scripts/setup-dev.sh --skip-packages
+./scripts/setup-dev.sh --skip-submodules --skip-cli
 ```
 
 ## Repository layout

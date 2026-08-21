@@ -2,14 +2,15 @@
 
 This document describes the source and binary release gates for the public
 `music-pi/daw` repository. The DAW repository is released independently from
-the `music-pi/mpi-station` image integrator.
+the `music-pi/music-pi` image integrator.
 
 ## Before tagging
 
 Use a clean checkout and initialize every nested submodule:
 
 ```bash
-git clone --recursive https://github.com/music-pi/daw.git
+git -c url.https://github.com/.insteadOf=git@github.com: clone --recursive \
+  https://github.com/music-pi/daw.git
 cd daw
 git submodule status --recursive
 ```
@@ -68,7 +69,7 @@ sha256sum maschinepi-headless-<version>-linux-arm64.tar.gz
 
 Publish the archive and its SHA-256 value together with the tag and submodule
 pin list. The Raspberry Pi image is produced and released by
-`music-pi/mpi-station`, not by this repository.
+`music-pi/music-pi`, not by this repository.
 
 ## Release notes should state
 

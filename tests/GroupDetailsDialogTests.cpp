@@ -7,6 +7,7 @@
 #include "../src/engine/SamplerInstrument.h"
 #include "harness/EngineHarness.h"
 #include "harness/JuceHarness.h"
+#include "harness/MockControllerHost.h"
 
 namespace
 {
@@ -22,6 +23,7 @@ protected:
 
     testharness::JuceFrameworkContext juceContext;
     testharness::EngineHarness harness;
+    testharness::MockControllerHost controller;
     WindowManager wm;
 };
 
@@ -248,6 +250,45 @@ TEST_F(GroupDetailsDialogTest, LifecycleShowAndDismiss)
 
     wm.dismissDialog();
     EXPECT_FALSE(wm.hasDialog());
+}
+
+TEST_F(GroupDetailsDialogTest, HardwareGroupSelectionCanCreateAndDeleteEmptySlot)
+{
+    wm.setControllerHost(&controller);
+    controller.setWindowManager(&wm);
+    wm.initSystemWidgets();
+
+    auto& gm = harness.audio().getGroupManager();
+    ASSERT_FALSE(gm.hasGroupData(3));
+
+    // ControllerGestureProcessor sends Select + g4 through this callback.
+    controller.notifyGroupSelection(3);
+    ASSERT_TRUE(wm.hasDialog());
+
+    auto* dialog = static_cast<GroupDetailsDialog*>(
+        wm.widgetForPanel(DisplaySide::Left));
+    ASSERT_NE(dialog, nullptr);
+    ASSERT_EQ(dialog->getOptions(0)[1].id, "create");
+
+    wm.handleOptionButton("d2");
+    EXPECT_FALSE(wm.hasDialog());
+    EXPECT_TRUE(gm.hasGroupData(3));
+    EXPECT_TRUE(gm.isGroupActive(3));
+
+    controller.notifyGroupSelection(3);
+    ASSERT_TRUE(wm.hasDialog());
+
+    dialog = static_cast<GroupDetailsDialog*>(
+        wm.widgetForPanel(DisplaySide::Left));
+    ASSERT_NE(dialog, nullptr);
+    ASSERT_EQ(dialog->getOptions(0)[1].id, "delete");
+
+    wm.handleOptionButton("d2");
+    ASSERT_TRUE(dialog->isConfirmingDelete());
+    wm.handleOptionButton("d4");
+
+    EXPECT_FALSE(gm.hasGroupData(3));
+    EXPECT_FALSE(gm.isGroupActive(3));
 }
 
 } // namespace

@@ -196,6 +196,19 @@ void MixerWidget::onEditReplaced()
     repaint();
 }
 
+void MixerWidget::onActiveSamplerAboutToChange()
+{
+    engine().getSampler().removeListener(this);
+}
+
+void MixerWidget::onActiveSamplerChanged()
+{
+    engine().getSampler().addListener(this);
+    padFlashDb_.clear();
+    refreshChannels();
+    repaint();
+}
+
 std::vector<std::string> MixerWidget::requiredResources(int page)
 {
     if (page != 0)

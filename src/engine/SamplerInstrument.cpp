@@ -13,6 +13,8 @@
 
 namespace
 {
+const juce::Identifier kSamplerGroupIndexProp { "samplerGroupIndex" };
+
 constexpr int kSequencerTimerHz = 200;
 
 float applyLayerVelocityCurve(
@@ -66,8 +68,9 @@ void removePluginRaw(te::Plugin* plugin)
 }
 }
 
-SamplerInstrument::SamplerInstrument(AudioEngine& engine)
+SamplerInstrument::SamplerInstrument(AudioEngine& engine, int groupIndex)
     : engine_(engine)
+    , groupIndex_(juce::jlimit(0, 7, groupIndex))
 {
 }
 
@@ -165,6 +168,16 @@ void SamplerInstrument::detach()
     patternNames_.assign(1, juce::String());
 }
 
+void SamplerInstrument::removeFromEdit()
+{
+    auto* edit = edit_;
+    auto* folder = folder_.get();
+    detach();
+
+    if (edit != nullptr && folder != nullptr)
+        edit->deleteTrack(folder);
+}
+
 bool SamplerInstrument::ensureInfrastructure()
 {
     if (edit_ == nullptr)
@@ -179,9 +192,15 @@ bool SamplerInstrument::ensureInfrastructure()
         {
             if (auto* f = dynamic_cast<te::FolderTrack*>(track))
             {
-                if (f->getName() == "Sampler")
+                const int storedGroup = static_cast<int>(
+                    f->state.getProperty(kSamplerGroupIndexProp, -1));
+                const bool isLegacyGroupZero = groupIndex_ == 0
+                    && storedGroup < 0 && f->getName() == "Sampler";
+                if (storedGroup == groupIndex_ || isLegacyGroupZero)
                 {
                     folder_ = f;
+                    folder_->state.setProperty(
+                        kSamplerGroupIndexProp, groupIndex_, nullptr);
                     break;
                 }
             }
@@ -191,7 +210,11 @@ bool SamplerInstrument::ensureInfrastructure()
         {
             folder_ = edit_->insertNewFolderTrack({ nullptr, nullptr }, nullptr, true);
             if (folder_ != nullptr)
-                folder_->setName("Sampler");
+            {
+                folder_->setName("Sampler Group " + juce::String(groupIndex_ + 1));
+                folder_->state.setProperty(
+                    kSamplerGroupIndexProp, groupIndex_, nullptr);
+            }
         }
     }
 
@@ -3050,7 +3073,9 @@ bool SamplerInstrument::serializePadsToState(juce::ValueTree& padsState,
                 if (sampleDirectory.createDirectory())
                 {
                     const auto destination = sampleDirectory.getChildFile(
-                        juce::String(pad.index + 1) + "-" + pad.sampleFile.getFileName());
+                        "g" + juce::String(groupIndex_ + 1) + "-p"
+                        + juce::String(pad.index + 1) + "-"
+                        + pad.sampleFile.getFileName());
 
                     if (pad.sampleFile == destination || pad.sampleFile.copyFileTo(destination))
                     {
@@ -3090,7 +3115,8 @@ bool SamplerInstrument::serializePadsToState(juce::ValueTree& padsState,
                 const auto sampleDirectory = projectFile.getSiblingFile(
                     projectFile.getFileNameWithoutExtension() + ".samples");
                 const auto destination = sampleDirectory.getChildFile(
-                    juce::String(pad.index + 1) + "-layer"
+                    "g" + juce::String(groupIndex_ + 1) + "-p"
+                    + juce::String(pad.index + 1) + "-layer"
                     + juce::String(static_cast<int>(layerIndex + 1)) + "-"
                     + layerFile.getFileName());
                 if (sampleDirectory.createDirectory()

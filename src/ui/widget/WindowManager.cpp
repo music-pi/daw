@@ -37,6 +37,9 @@ WindowManager::WindowManager()
 
 WindowManager::~WindowManager()
 {
+    if (controllerHost_ != nullptr)
+        controllerHost_->setGroupDetailCallback({});
+
     dismissAllDialogs();
     closeAll();
 
@@ -351,7 +354,16 @@ void WindowManager::setAudioEngine(AudioEngine* ae)
 
 void WindowManager::setControllerHost(ControllerHost* ch)
 {
+    if (controllerHost_ != nullptr)
+        controllerHost_->setGroupDetailCallback({});
+
     controllerHost_ = ch;
+
+    if (controllerHost_ != nullptr)
+    {
+        controllerHost_->setGroupDetailCallback(
+            [this](int groupIndex) { showGroupDetails(groupIndex); });
+    }
 }
 
 void WindowManager::syncOptionLeds()
@@ -768,13 +780,17 @@ void WindowManager::initSystemWidgets()
     addSystemWidget(std::make_unique<TransportWidget>());
 
     auto groupWidget = std::make_unique<GroupWidget>();
-    groupWidget->setGroupDetailsCallback([this](int groupIndex) {
-        auto dialog = std::make_unique<GroupDetailsDialog>();
-        dialog->setGroupIndex(groupIndex);
-        dialog->setDismissCallback([this]() { dismissDialog(); });
-        showDialog(std::move(dialog));
-    });
+    groupWidget->setGroupDetailsCallback(
+        [this](int groupIndex) { showGroupDetails(groupIndex); });
     addSystemWidget(std::move(groupWidget));
+}
+
+void WindowManager::showGroupDetails(int groupIndex)
+{
+    auto dialog = std::make_unique<GroupDetailsDialog>();
+    dialog->setGroupIndex(groupIndex);
+    dialog->setDismissCallback([this]() { dismissDialog(); });
+    showDialog(std::move(dialog));
 }
 
 void WindowManager::tickActiveWidgets()
@@ -835,6 +851,28 @@ void WindowManager::notifyEditReplaced()
             systemWidget->onEditReplaced();
 
     refreshBars();
+}
+
+void WindowManager::notifyActiveSamplerAboutToChange()
+{
+    for (auto& slot : slots_)
+        if (slot.widget != nullptr)
+            slot.widget->onActiveSamplerAboutToChange();
+
+    for (auto& dialog : dialogStack_)
+        if (dialog != nullptr)
+            dialog->onActiveSamplerAboutToChange();
+}
+
+void WindowManager::notifyActiveSamplerChanged()
+{
+    for (auto& slot : slots_)
+        if (slot.widget != nullptr)
+            slot.widget->onActiveSamplerChanged();
+
+    for (auto& dialog : dialogStack_)
+        if (dialog != nullptr)
+            dialog->onActiveSamplerChanged();
 }
 
 // -- juce::Component --

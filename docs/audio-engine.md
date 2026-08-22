@@ -53,7 +53,10 @@ chain. Meter reads use Tracktion's `LevelMeasurer::Client`.
 
 ## Other engine services
 
-- `GroupManager` stores and recalls eight pad snapshots and group colours.
+- `GroupManager` creates, deletes, and selects eight independent sampler
+  groups. Each group owns 16 pad tracks plus its own samples, pad settings,
+  patterns, and song lanes; all groups remain in the same Edit and therefore
+  play from the same global transport timeline.
 - `KeyboardInstrumentBank` manages instrument slots and keyboard patterns.
 - `SamplePreviewPlayer` uses Tracktion's file-preview Edit for browser/editor
   audition without changing the main sampler.
@@ -124,7 +127,7 @@ sessions. Sample paths are resolved relative to project/user sample locations
 where possible.
 
 Do not serialize a second copy of data Tracktion already owns unless a stable
-MusicPI snapshot is explicitly required for group recall or migration.
+MusicPI snapshot is explicitly required for migration.
 
 ## Real-time rules
 

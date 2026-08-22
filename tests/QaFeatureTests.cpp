@@ -775,12 +775,13 @@ TEST(QaGroupPersistence, ClearGroupRemovesData)
 
     auto& groups = harness.audio().getGroupManager();
 
-    groups.createGroup(0);
-    groups.saveCurrentState(0);
-    EXPECT_TRUE(groups.hasGroupData(0));
+    groups.createGroup(1);
+    EXPECT_TRUE(groups.hasGroupData(1));
 
-    groups.clearGroup(0);
-    EXPECT_FALSE(groups.isGroupActive(0));
+    groups.clearGroup(1);
+    EXPECT_FALSE(groups.hasGroupData(1));
+    EXPECT_FALSE(groups.isGroupActive(1));
+    EXPECT_TRUE(groups.isGroupActive(0));
 }
 
 // ============================================================================

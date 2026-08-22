@@ -1402,6 +1402,16 @@ void UiHost::editReplaced()
   notifyStashedWidgets(false);
 }
 
+void UiHost::activeSamplerAboutToChange()
+{
+  windowManager_.notifyActiveSamplerAboutToChange();
+}
+
+void UiHost::activeSamplerChanged()
+{
+  windowManager_.notifyActiveSamplerChanged();
+}
+
 void UiHost::notifyStashedWidgets(bool beforeReplacement)
 {
   Widget* const stashedWidgets[] = {

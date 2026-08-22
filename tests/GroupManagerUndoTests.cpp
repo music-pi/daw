@@ -3,148 +3,62 @@
 #include "../src/engine/AudioEngine.h"
 #include "../src/engine/GroupManager.h"
 #include "../src/engine/SamplerInstrument.h"
-
 #include "harness/EngineHarness.h"
 
-TEST(GroupManagerUndoTests, RecallGroupIsAtomicUndo)
+TEST(GroupTransportTests, EveryGroupPatternUsesTheSameGlobalTimeline)
 {
     testharness::EngineHarness harness;
     harness.createEmptyEdit();
 
-    auto& pads = harness.pads();
-    auto& groups = harness.audio().getGroupManager();
+    auto& engine = harness.audio();
+    auto& groups = engine.getGroupManager();
+    auto* groupA = engine.getSamplerForGroup(0);
+    ASSERT_NE(groupA, nullptr);
+    ASSERT_TRUE(groupA->setStep(0, 0, 0, true));
 
-    // Load samples into group A (group 0)
-    auto sample0 = harness.createTemporarySampleFile("grp_pad0", 44100);
-    auto sample1 = harness.createTemporarySampleFile("grp_pad1", 44100);
-    pads.loadSample(0, sample0);
-    pads.loadSample(1, sample1);
-    pads.setGainDb(0, -6.0f);
-    pads.setChokeGroupDirect(0, 2);
-    groups.saveCurrentState(0);
+    groups.createGroup(1);
+    auto* groupB = engine.getSamplerForGroup(1);
+    ASSERT_NE(groupB, nullptr);
+    ASSERT_TRUE(groupB->setStep(0, 0, 8, true));
 
-    // Load different samples into group B (group 1)
-    auto sample2 = harness.createTemporarySampleFile("grp_pad2", 44100);
-    pads.loadSample(0, sample2);
-    pads.loadSample(1, juce::File());  // clear pad 1
-    pads.clearSample(1);
-    pads.setGainDb(0, -3.0f);
-    pads.setChokeGroupDirect(0, 0);
-    groups.saveCurrentState(1);
+    const auto* padA = groupA->getPad(0);
+    const auto* padB = groupB->getPad(0);
+    ASSERT_NE(padA, nullptr);
+    ASSERT_NE(padB, nullptr);
+    ASSERT_NE(padA->patternClip, nullptr);
+    ASSERT_NE(padB->patternClip, nullptr);
 
-    // Record the state before recall
-    auto& undo = harness.audio().getUndoManager();
+    // Both clips are live in the same Edit at the same transport origin.
+    EXPECT_EQ(padA->track->edit.getProjectItemID(),
+              padB->track->edit.getProjectItemID());
+    EXPECT_EQ(padA->patternClip->getPosition().getStart(),
+              padB->patternClip->getPosition().getStart());
+    EXPECT_EQ(padA->patternClip->getPosition().getEnd(),
+              padB->patternClip->getPosition().getEnd());
 
-    // Recall group A — this should be one atomic transaction
-    undo.beginNewTransaction("Before recall");
-    groups.recallGroup(0);
+    engine.play();
+    ASSERT_TRUE(engine.isPlaying());
+    ASSERT_TRUE(groups.recallGroup(0));
+    EXPECT_TRUE(engine.isPlaying());
+    engine.stop();
+}
 
-    // Verify group A is restored
+TEST(GroupTransportTests, DeletingOneGroupLeavesOtherBankAndTransportIntact)
+{
+    testharness::EngineHarness harness;
+    harness.createEmptyEdit();
+
+    auto& engine = harness.audio();
+    auto& groups = engine.getGroupManager();
+    auto sample = harness.createTemporarySampleFile("surviving_group", 4410);
+    ASSERT_TRUE(engine.getSamplerForGroup(0)->loadSample(0, sample));
+
+    groups.createGroup(1);
+    ASSERT_NE(engine.getSamplerForGroup(1), nullptr);
+    groups.clearGroup(1);
+
+    EXPECT_EQ(engine.getSamplerForGroup(1), nullptr);
+    ASSERT_NE(engine.getSamplerForGroup(0), nullptr);
+    EXPECT_EQ(engine.getSamplerForGroup(0)->getPad(0)->sampleFile, sample);
     EXPECT_TRUE(groups.isGroupActive(0));
-    auto* pad0 = pads.getPad(0);
-    ASSERT_NE(pad0, nullptr);
-    EXPECT_NEAR(pads.getGainDb(0), -6.0f, 0.01f);
-
-    // A single undo should revert the entire recall
-    // (If recallGroup created 40+ transactions, we'd need 40+ undos)
-    EXPECT_TRUE(undo.canUndo());
-    undo.undo();
-
-    // After undo, TE restores SamplerPlugin/VolumeAndPanPlugin state natively.
-    // Gains and choke groups should be back to group B's state.
-    EXPECT_NEAR(pads.getGainDb(0), -3.0f, 0.01f);
-    EXPECT_EQ(pads.getChokeGroup(0), 0);
-}
-
-TEST(GroupManagerUndoTests, RecallGroupCoalesceIntoOneUndoStep)
-{
-    // Regression: the recall loop touches up to 16 pads with up to two
-    // commands each (gain, choke group) plus sampler plugin mutations.
-    // Every one of those must coalesce into a single JUCE transaction so
-    // one undo() reverts the whole recall, not just one pad.
-    testharness::EngineHarness harness;
-    harness.createEmptyEdit();
-
-    auto& pads = harness.pads();
-    auto& groups = harness.audio().getGroupManager();
-    auto& undo = harness.audio().getUndoManager();
-
-    // Group 0 ("source"): distinct gain + choke on three pads.
-    auto sampleA = harness.createTemporarySampleFile("coalesce_a", 4096);
-    auto sampleB = harness.createTemporarySampleFile("coalesce_b", 4096);
-    auto sampleC = harness.createTemporarySampleFile("coalesce_c", 4096);
-    pads.loadSample(0, sampleA);
-    pads.loadSample(1, sampleB);
-    pads.loadSample(2, sampleC);
-    pads.setGainDb(0, -6.0f);
-    pads.setGainDb(1, -9.0f);
-    pads.setGainDb(2, -12.0f);
-    pads.setChokeGroupDirect(0, 1);
-    pads.setChokeGroupDirect(1, 2);
-    pads.setChokeGroupDirect(2, 3);
-    groups.saveCurrentState(0);
-
-    // Group 1 ("destination"): wipe pads 1-2, alter pad 0.
-    pads.clearSample(1);
-    pads.clearSample(2);
-    pads.setGainDb(0, 0.0f);
-    pads.setGainDb(1, 0.0f);
-    pads.setGainDb(2, 0.0f);
-    pads.setChokeGroupDirect(0, 5);
-    pads.setChokeGroupDirect(1, 0);
-    pads.setChokeGroupDirect(2, 0);
-    groups.saveCurrentState(1);
-
-    // Recall group 0 — should coalesce into a single transaction.
-    undo.beginNewTransaction("Seal destination");
-    groups.recallGroup(0);
-
-    EXPECT_NEAR(pads.getGainDb(0), -6.0f, 0.01f);
-    EXPECT_NEAR(pads.getGainDb(1), -9.0f, 0.01f);
-    EXPECT_NEAR(pads.getGainDb(2), -12.0f, 0.01f);
-    EXPECT_EQ(pads.getChokeGroup(0), 1);
-    EXPECT_EQ(pads.getChokeGroup(1), 2);
-    EXPECT_EQ(pads.getChokeGroup(2), 3);
-
-    // One undo() reverts the entire recall.
-    ASSERT_TRUE(undo.canUndo());
-    undo.undo();
-
-    EXPECT_NEAR(pads.getGainDb(0), 0.0f, 0.01f);
-    EXPECT_NEAR(pads.getGainDb(1), 0.0f, 0.01f);
-    EXPECT_NEAR(pads.getGainDb(2), 0.0f, 0.01f);
-    EXPECT_EQ(pads.getChokeGroup(0), 5);
-    EXPECT_EQ(pads.getChokeGroup(1), 0);
-    EXPECT_EQ(pads.getChokeGroup(2), 0);
-}
-
-TEST(GroupManagerUndoTests, RecallGroupUsesDirectChokeGroup)
-{
-    // Verify that recallGroup uses setChokeGroupDirect (no individual undo transactions)
-    // This is verified by checking that only one undo transaction exists after recall
-    testharness::EngineHarness harness;
-    harness.createEmptyEdit();
-
-    auto& pads = harness.pads();
-    auto& groups = harness.audio().getGroupManager();
-
-    // Set up group 0 with choke groups
-    pads.setChokeGroupDirect(0, 3);
-    pads.setChokeGroupDirect(1, 4);
-    groups.saveCurrentState(0);
-
-    // Set up different state
-    pads.setChokeGroupDirect(0, 0);
-    pads.setChokeGroupDirect(1, 0);
-    groups.saveCurrentState(1);
-
-    auto& undo = harness.audio().getUndoManager();
-    undo.clearUndoHistory();
-
-    // Recall group 0
-    groups.recallGroup(0);
-
-    // Verify choke groups are restored
-    EXPECT_EQ(pads.getChokeGroup(0), 3);
-    EXPECT_EQ(pads.getChokeGroup(1), 4);
 }

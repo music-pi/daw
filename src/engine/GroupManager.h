@@ -1,21 +1,28 @@
 #pragma once
 
 #include <array>
-#include <optional>
-#include <vector>
 #include <cstdint>
+
 #include <juce_data_structures/juce_data_structures.h>
 
 #include "../control/HardwareConstants.h"
 
-class SamplerInstrument;
 class AudioEngine;
 
+/**
+ * Owns the eight sampler-group slots.
+ *
+ * A group is an independent SamplerInstrument (16 pads, pad settings,
+ * patterns, and song data) attached to the same Tracktion Edit. Selecting a
+ * group only changes which bank the controller/UI addresses; it does not stop
+ * or replace any other group's clips, so all groups share the global transport.
+ */
 class GroupManager
 {
 public:
     static constexpr int kGroupCount = 8;
-    static constexpr int kColorCount = static_cast<int>(HardwareConstants::kIndexedColorPairs.size());
+    static constexpr int kColorCount = static_cast<int>(
+        HardwareConstants::kIndexedColorPairs.size());
 
     static constexpr uint8_t colorAt(int index) noexcept
     {
@@ -29,62 +36,46 @@ public:
         return HardwareConstants::indexedColorPairIndex(color);
     }
 
-    // Simplified pad snapshot for group storage
-    struct PadSnapshot
-    {
-        int index { -1 };
-        juce::String name;
-        juce::String samplePath;
-        std::vector<juce::String> sampleLayerPaths;
-        std::vector<float> layerGainsDb;
-        std::vector<float> layerWeights;
-        std::vector<int> layerVelocityCurves;
-        std::vector<float> layerVelocityMinimums;
-        std::vector<float> layerVelocityMaximums;
-        float gainDb { 0.0f };
-        int chokeGroup { 0 };
-        int triggerMode { 0 };
-    };
+    explicit GroupManager(AudioEngine& engine);
 
-    explicit GroupManager(AudioEngine& engine, SamplerInstrument& sampler);
-
+    // Compatibility names retained for existing callers: groups no longer
+    // snapshot/restore another bank. Both operations select the group's own
+    // persistent sampler bank.
     bool saveCurrentState(int groupIndex);
     bool recallGroup(int groupIndex);
+
     [[nodiscard]] bool isGroupActive(int groupIndex) const noexcept;
     [[nodiscard]] bool hasGroupData(int groupIndex) const noexcept;
     [[nodiscard]] uint8_t getGroupColor(int groupIndex) const noexcept;
-    void createGroup(int groupIndex);
     [[nodiscard]] int getActiveGroupIndex() const noexcept { return activeGroupIndex; }
+
+    void createGroup(int groupIndex);
     void clearGroup(int groupIndex);
     void setGroupColor(int groupIndex, uint8_t color);
     void refreshStateBinding();
 
 private:
-    AudioEngine& audioEngine;
-    SamplerInstrument& sampler_;
-
     struct Group
     {
-        std::optional<std::vector<PadSnapshot>> padSnapshots;
         uint8_t color { 0 };
+        bool exists { false };
         bool isActive { false };
     };
+
+    AudioEngine& audioEngine;
+    juce::ValueTree groupsStateNode;
+    std::array<Group, kGroupCount> groups;
+    int activeGroupIndex { 0 };
 
     uint8_t generateRandomColor() const;
     static uint8_t normalizeColor(uint8_t color) noexcept;
     bool isValidGroupIndex(int groupIndex) const noexcept;
-
-    juce::ValueTree groupsStateNode;
-    juce::UndoManager* undoManager { nullptr };
-    std::array<Group, kGroupCount> groups;
-    int activeGroupIndex { -1 };
-
-    void bindStateTree();
     void ensureGroupNodes();
     juce::ValueTree getGroupNode(int groupIndex) const;
-    juce::ValueTree ensureGroupNode(int groupIndex, bool recordUndo = true);
-    void updateGroupState(int groupIndex, bool recordUndo = true);
-    void updateActiveGroupState(bool recordUndo = true);
+    juce::ValueTree ensureGroupNode(int groupIndex);
+    void updateGroupState(int groupIndex);
+    void updateActiveGroupState();
+    int findFallbackGroup(int excluding) const noexcept;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(GroupManager)
 };

@@ -1,96 +1,73 @@
 #include <gtest/gtest.h>
 
 #include "../src/engine/AudioEngine.h"
-#include "../src/engine/SamplerInstrument.h"
 #include "../src/engine/GroupManager.h"
-
+#include "../src/engine/SamplerInstrument.h"
 #include "harness/EngineHarness.h"
 
-// ============================================================================
-// recallGroup Atomic Undo Tests
-// ============================================================================
-
-TEST(RecallGroupTests, RecallUsesAtomicUndoTransaction)
+TEST(GroupBankTests, NewGroupOwnsIndependentPadAndPatternState)
 {
     testharness::EngineHarness harness;
     harness.createEmptyEdit();
 
     auto& engine = harness.audio();
-    auto& pads = harness.pads();
     auto& groups = engine.getGroupManager();
-    auto& undoManager = engine.getUndoManager();
+    auto sampleA = harness.createTemporarySampleFile("group_a", 4410);
+    auto sampleB = harness.createTemporarySampleFile("group_b", 4410);
 
-    // Load samples and set choke groups on two pads
-    auto sample1 = harness.createTemporarySampleFile("recall_s1", 4410);
-    auto sample2 = harness.createTemporarySampleFile("recall_s2", 4410);
-    pads.loadSample(0, sample1);
-    pads.loadSample(1, sample2);
-    pads.setChokeGroupDirect(0, 1);
-    pads.setChokeGroupDirect(1, 2);
+    auto* groupA = engine.getSamplerForGroup(0);
+    ASSERT_NE(groupA, nullptr);
+    ASSERT_TRUE(groupA->loadSample(0, sampleA));
+    groupA->setGainDb(0, -6.0f);
+    ASSERT_TRUE(groupA->setStep(0, 0, 0, true));
 
-    // Save current state as group 0
-    groups.saveCurrentState(0);
+    groups.createGroup(1);
+    auto* groupB = engine.getSamplerForGroup(1);
+    ASSERT_NE(groupB, nullptr);
+    EXPECT_EQ(&engine.getSampler(), groupB);
+    EXPECT_FALSE(groupB->getPad(0)->hasSample);
+    ASSERT_TRUE(groupB->loadSample(0, sampleB));
+    groupB->setGainDb(0, -3.0f);
+    ASSERT_TRUE(groupB->setStep(0, 0, 4, true));
 
-    // Clear undo history so we start fresh
-    undoManager.clearUndoHistory();
+    ASSERT_TRUE(groups.recallGroup(0));
+    EXPECT_EQ(&engine.getSampler(), groupA);
+    EXPECT_EQ(groupA->getPad(0)->sampleFile, sampleA);
+    EXPECT_NEAR(groupA->getGainDb(0), -6.0f, 0.01f);
 
-    // Switch to group 1 (empty), save it
-    for (int i = 0; i < pads.getPadCount(); ++i)
-    {
-        pads.clearSample(i);
-        pads.setChokeGroupDirect(i, 0);
-    }
-    groups.saveCurrentState(1);
-    undoManager.clearUndoHistory();
-
-    // Now recall group 0 — should be a single undo transaction
-    EXPECT_TRUE(groups.recallGroup(0));
-
-    // Verify choke groups were restored
-    EXPECT_EQ(pads.getChokeGroup(0), 1);
-    EXPECT_EQ(pads.getChokeGroup(1), 2);
-
-    // Verify the undo description identifies the recall (group number is
-    // 1-based in the label — group index 0 → "Recall Group 1")
-    EXPECT_TRUE(undoManager.canUndo());
-    auto undoDesc = undoManager.getUndoDescription();
-    EXPECT_EQ(undoDesc, juce::String("Recall Group 1"));
+    const auto groupAPatterns = groupA->getPadsSnapshot(
+        SamplerInstrument::SnapshotContent::Patterns);
+    const auto groupBPatterns = groupB->getPadsSnapshot(
+        SamplerInstrument::SnapshotContent::Patterns);
+    ASSERT_FALSE(groupAPatterns.empty());
+    ASSERT_FALSE(groupBPatterns.empty());
+    EXPECT_TRUE(groupAPatterns[0].patterns[0].steps[0]);
+    EXPECT_FALSE(groupAPatterns[0].patterns[0].steps[4]);
+    EXPECT_FALSE(groupBPatterns[0].patterns[0].steps[0]);
+    EXPECT_TRUE(groupBPatterns[0].patterns[0].steps[4]);
 }
 
-TEST(RecallGroupTests, RecallDoesNotCreateMultipleChokeGroupTransactions)
+TEST(GroupBankTests, SelectingGroupDoesNotRewritePadStateOrUndoHistory)
 {
     testharness::EngineHarness harness;
     harness.createEmptyEdit();
 
     auto& engine = harness.audio();
-    auto& pads = harness.pads();
     auto& groups = engine.getGroupManager();
-    auto& undoManager = engine.getUndoManager();
+    auto* groupA = engine.getSamplerForGroup(0);
+    ASSERT_NE(groupA, nullptr);
+    groupA->setChokeGroupDirect(0, 3);
 
-    // Set up pads with different choke groups
-    auto sample = harness.createTemporarySampleFile("recall_choke", 4410);
-    for (int i = 0; i < 4; ++i)
-    {
-        pads.loadSample(i, sample);
-        pads.setChokeGroupDirect(i, i + 1);
-    }
-    groups.saveCurrentState(0);
+    groups.createGroup(1);
+    auto* groupB = engine.getSamplerForGroup(1);
+    ASSERT_NE(groupB, nullptr);
+    groupB->setChokeGroupDirect(0, 5);
 
-    // Clear and save as group 1
-    for (int i = 0; i < pads.getPadCount(); ++i)
-    {
-        pads.clearSample(i);
-        pads.setChokeGroupDirect(i, 0);
-    }
-    groups.saveCurrentState(1);
-    undoManager.clearUndoHistory();
+    auto& undo = engine.getUndoManager();
+    undo.clearUndoHistory();
 
-    // Recall group 0 — should NOT create 4 individual "Set Choke Group" transactions
-    groups.recallGroup(0);
-
-    // There should be exactly one undo transaction, not multiple
-    EXPECT_TRUE(undoManager.canUndo());
-    undoManager.undo();
-    // After single undo, there should be nothing left to undo
-    EXPECT_FALSE(undoManager.canUndo());
+    ASSERT_TRUE(groups.recallGroup(0));
+    EXPECT_EQ(groupA->getChokeGroup(0), 3);
+    EXPECT_EQ(groupB->getChokeGroup(0), 5);
+    EXPECT_FALSE(undo.canUndo());
 }

@@ -38,12 +38,13 @@ const juce::Identifier kStatePlayModeProp { "playMode" };
 AudioEngine::AudioEngine(te::Engine& e)
     : engine(e)
     , paused(false)
-    , sampler_(std::make_unique<SamplerInstrument>(*this))
     , keyboardBank_(std::make_unique<KeyboardInstrumentBank>(*this))
-    , groupManager(std::make_unique<GroupManager>(*this, *sampler_))
     , pluginConfigRegistry_(std::make_unique<PluginConfigRegistry>())
     , keyboardArp_(std::make_unique<Arpeggiator>(*this))
 {
+    samplers_[0] = std::make_unique<SamplerInstrument>(*this, 0);
+    groupManager = std::make_unique<GroupManager>(*this);
+
     // Custom pad MIDI plugins must be registered before any Edit is loaded so
     // Tracktion can rehydrate them from saved track plugin chains.
     engine.getPluginManager().createBuiltInType<RoundRobinMidiPlugin>();
@@ -82,8 +83,9 @@ void AudioEngine::teardownEdit() noexcept
     freeTransportContext();
     if (keyboardArp_ != nullptr)
         keyboardArp_->setTrack(nullptr);
-    if (sampler_ != nullptr)
-        sampler_->detach();
+    for (auto& sampler : samplers_)
+        if (sampler != nullptr)
+            sampler->detach();
     if (keyboardBank_ != nullptr)
         keyboardBank_->detach();
     edit.reset();
@@ -103,7 +105,9 @@ bool AudioEngine::installEdit(std::unique_ptr<te::Edit> newEdit, bool resetState
     // attach to the new edit AFTER the pointer is stable. Kept as one list so
     // adding a new edit-bound subsystem only needs a single entry.
     auto forEachSubsystem = [&](auto&& fn) {
-        if (sampler_ != nullptr)      fn(*sampler_);
+        for (auto& sampler : samplers_)
+            if (sampler != nullptr)
+                fn(*sampler);
         if (keyboardBank_ != nullptr) fn(*keyboardBank_);
     };
 
@@ -111,6 +115,11 @@ bool AudioEngine::installEdit(std::unique_ptr<te::Edit> newEdit, bool resetState
 
     if (edit != nullptr)
         forEachSubsystem([](auto& sub) { sub.detach(); });
+
+    // Group slots are reconstructed from the incoming project state after
+    // the Edit is installed. Carrying banks across edits would create tracks
+    // in the new project for groups belonging to the old one.
+    resetSamplerGroups();
 
     edit = std::move(newEdit);
     edit->playInStopEnabled = true;
@@ -264,8 +273,9 @@ void AudioEngine::createEmptyEdit()
     // Free context before validation to prevent devices from being added to playback context
     freeTransportContext();
 
-    for (int index = sampler_->getPadCount(); index < kInitialPadCount; ++index)
-        sampler_->addPad("Pad " + juce::String(index + 1));
+    auto& sampler = getSampler();
+    for (int index = sampler.getPadCount(); index < kInitialPadCount; ++index)
+        sampler.addPad("Pad " + juce::String(index + 1));
 
     // Validate once after all pads are created. Each pad adds the same kind of
     // track/wave-input device, and validateInputDeviceConfigurations walks every
@@ -377,8 +387,102 @@ bool AudioEngine::loadProjectFromFile(const juce::File& file)
         initialiseStateTree();
 
     // Restore pad state from padsState
-    if (sampler_ != nullptr && padsState.isValid())
-        sampler_->restorePadsFromState(padsState, file);
+    if (samplers_[0] != nullptr && padsState.isValid())
+        samplers_[0]->restorePadsFromState(padsState, file);
+
+    for (int groupIndex = 0; groupIndex < kSamplerGroupCount; ++groupIndex)
+    {
+        auto* groupSampler = getSamplerForGroup(groupIndex);
+        if (groupSampler == nullptr)
+            continue;
+
+        for (int i = 0; i < groupsState.getNumChildren(); ++i)
+        {
+            auto groupNode = groupsState.getChild(i);
+            if (groupNode.hasType("group")
+                && static_cast<int>(groupNode.getProperty("index", -1)) == groupIndex)
+            {
+                const auto bank = groupNode.getChildWithName("bank");
+                if (bank.isValid() && groupIndex > 0)
+                {
+                    groupSampler->restorePadsFromState(bank, file);
+                    break;
+                }
+
+                // One-time migration from the former snapshot-recall model.
+                // That format could not preserve patterns per group, but its
+                // samples, layers, names, gain, choke, and trigger settings
+                // can become a real independent bank without data loss.
+                const auto legacyPads = groupNode.getChildWithName("pads");
+                for (int padNodeIndex = 0;
+                     padNodeIndex < legacyPads.getNumChildren(); ++padNodeIndex)
+                {
+                    const auto padNode = legacyPads.getChild(padNodeIndex);
+                    const int padIndex = static_cast<int>(
+                        padNode.getProperty("index", -1));
+                    if (padIndex < 0 || padIndex >= groupSampler->getPadCount())
+                        continue;
+
+                    const auto resolvePath = [&file](const juce::String& path)
+                    {
+                        juce::File sample(path);
+                        if (!sample.existsAsFile() && !juce::File::isAbsolutePath(path))
+                            sample = file.getParentDirectory().getChildFile(path);
+                        return sample;
+                    };
+
+                    const auto primaryPath = padNode.getProperty(
+                        "samplePath", "").toString();
+                    const auto primaryFile = resolvePath(primaryPath);
+                    bool sampleLoaded = false;
+                    if (primaryFile.existsAsFile())
+                        sampleLoaded = groupSampler->loadSample(padIndex, primaryFile);
+
+                    int restoredLayer = 0;
+                    for (int layerIndex = 0;
+                         layerIndex < padNode.getNumChildren(); ++layerIndex)
+                    {
+                        const auto layerNode = padNode.getChild(layerIndex);
+                        if (!layerNode.hasType("sampleLayer"))
+                            continue;
+
+                        const auto layerFile = resolvePath(
+                            layerNode.getProperty("path", "").toString());
+                        if (!sampleLoaded && layerFile.existsAsFile())
+                            sampleLoaded = groupSampler->loadSample(padIndex, layerFile);
+                        else if (restoredLayer > 0 && layerFile.existsAsFile())
+                            sampleLoaded = groupSampler->addSampleLayer(
+                                padIndex, layerFile) || sampleLoaded;
+
+                        if (sampleLoaded)
+                        {
+                            groupSampler->setSampleLayerGainDbRaw(
+                                padIndex, restoredLayer,
+                                static_cast<float>(layerNode.getProperty("gainDb", 0.0f)));
+                            groupSampler->setSampleLayerRandomWeightRaw(
+                                padIndex, restoredLayer,
+                                static_cast<float>(layerNode.getProperty("weight", 1.0f)));
+                        }
+                        ++restoredLayer;
+                    }
+
+                    groupSampler->setPadName(
+                        padIndex, padNode.getProperty("name", "").toString());
+                    groupSampler->setGainDbRaw(
+                        padIndex,
+                        static_cast<float>(padNode.getProperty("gainDb", 0.0f)));
+                    groupSampler->setChokeGroupDirect(
+                        padIndex,
+                        static_cast<int>(padNode.getProperty("chokeGroup", 0)));
+                    groupSampler->setTriggerModeDirect(
+                        padIndex,
+                        static_cast<SamplerInstrument::TriggerMode>(
+                            static_cast<int>(padNode.getProperty("triggerMode", 0))));
+                }
+                break;
+            }
+        }
+    }
 
     // Restore keyboard bank cursor. attachToEdit already rediscovered the
     // slot tracks from the Edit tree; the appState child just positions the
@@ -446,9 +550,35 @@ bool AudioEngine::saveProjectToFile(const juce::File& file)
     // Edit tree. Archive their currently-live timeline clips BEFORE writing
     // that tree; doing this after save silently persisted a stale active
     // pattern for keyboard recordings.
-    if (sampler_ != nullptr && padsState.isValid()
-        && !sampler_->serializePadsToState(padsState, file))
+    if (samplers_[0] != nullptr && padsState.isValid()
+        && !samplers_[0]->serializePadsToState(padsState, file))
         return false;
+    for (int i = 0; i < groupsState.getNumChildren(); ++i)
+    {
+        auto groupNode = groupsState.getChild(i);
+        if (auto legacyPads = groupNode.getChildWithName("pads");
+            legacyPads.isValid())
+            groupNode.removeChild(legacyPads, nullptr);
+    }
+    for (int groupIndex = 1; groupIndex < kSamplerGroupCount; ++groupIndex)
+    {
+        auto* groupSampler = getSamplerForGroup(groupIndex);
+        if (groupSampler == nullptr)
+            continue;
+
+        for (int i = 0; i < groupsState.getNumChildren(); ++i)
+        {
+            auto groupNode = groupsState.getChild(i);
+            if (!groupNode.hasType("group")
+                || static_cast<int>(groupNode.getProperty("index", -1)) != groupIndex)
+                continue;
+
+            auto bank = groupNode.getOrCreateChildWithName("bank", nullptr);
+            if (!groupSampler->serializePadsToState(bank, file))
+                return false;
+            break;
+        }
+    }
     if (keyboardBank_ != nullptr)
         keyboardBank_->archiveLiveClipsTo(
             keyboardBank_->getActivePatternIndex());
@@ -601,8 +731,10 @@ void AudioEngine::play()
         // Materialize the song as real timeline clips before starting Track
         // playback so TE reads pattern transitions natively — no mid-play
         // MidiList mutations, no step-0 drops on bar boundaries.
-        if (sampler_ && playMode == PlayMode::Track)
-            sampler_->materializeSongTimeline();
+        if (playMode == PlayMode::Track)
+            for (auto& sampler : samplers_)
+                if (sampler != nullptr)
+                    sampler->materializeSongTimeline();
 
         // Starting from stopped should respect the play-mode loop, but resuming from
         // a paused position should let TE continue from the current transport state.
@@ -664,8 +796,9 @@ void AudioEngine::stop()
     // Tear down any materialized song-timeline clips so the pad timeline
     // goes back to the canonical single-live-clip-per-pad shape. Safe no-op
     // when nothing was materialized (Pattern mode, or never-played Track).
-    if (sampler_)
-        sampler_->dematerializeSongTimeline();
+    for (auto& sampler : samplers_)
+        if (sampler != nullptr)
+            sampler->dematerializeSongTimeline();
 
     // If we were counting-in / recording, restore the click-track preference
     // that the armed play() path overrode.
@@ -777,10 +910,12 @@ void AudioEngine::setPlayMode(PlayMode mode)
     // Any mode transition tears down materialized timeline clips so the
     // live pad.patternClip resumes its canonical position. play() will
     // re-materialize if we're going back into Track mode.
-    if (sampler_)
+    for (auto& sampler : samplers_)
     {
-        sampler_->dematerializeSongTimeline();
-        sampler_->refreshPatternClipRanges();
+        if (sampler == nullptr)
+            continue;
+        sampler->dematerializeSongTimeline();
+        sampler->refreshPatternClipRanges();
     }
 }
 
@@ -811,13 +946,19 @@ void AudioEngine::updateLoopRangeForPlayMode()
     {
         // Use the shared per-pad pattern edit range (all pad MidiClips are
         // length-synchronised by setPatternLength).
-        auto range = sampler_ ? sampler_->getPatternEditTimeRange() : std::nullopt;
-        if (range.has_value())
+        for (const auto& sampler : samplers_)
         {
-            loopStart = range->getStart().inSeconds();
-            loopEnd = range->getEnd().inSeconds();
+            const auto range = sampler != nullptr
+                ? sampler->getPatternEditTimeRange() : std::nullopt;
+            if (!range.has_value())
+                continue;
+
+            loopStart = loopEnd == 0.0
+                ? range->getStart().inSeconds()
+                : juce::jmin(loopStart, range->getStart().inSeconds());
+            loopEnd = juce::jmax(loopEnd, range->getEnd().inSeconds());
         }
-        else
+        if (loopEnd <= loopStart)
         {
             const auto existingRange = transport.getLoopRange();
             loopStart = existingRange.getStart().inSeconds();
@@ -828,7 +969,10 @@ void AudioEngine::updateLoopRangeForPlayMode()
     {
         // Song mode: loop spans the full song — max(startBar + bars) across
         // every lane's blocks. Empty song falls back to the clip arrangement end.
-        const int totalBars = sampler_ ? sampler_->getSongTotalBars() : 0;
+        int totalBars = 0;
+        for (const auto& sampler : samplers_)
+            if (sampler != nullptr)
+                totalBars = juce::jmax(totalBars, sampler->getSongTotalBars());
         if (totalBars > 0)
         {
             loopStart = 0.0;
@@ -1536,11 +1680,10 @@ void AudioEngine::panicAllNotes()
     // SamplerPlugin does not override Plugin::midiPanic(), so stop every pad
     // explicitly. This also handles one-shot samples whose release edge was
     // lost by the controller.
-    if (sampler_ != nullptr)
-    {
-        for (int pad = 0; pad < kInitialPadCount; ++pad)
-            sampler_->stopPad(pad);
-    }
+    for (auto& sampler : samplers_)
+        if (sampler != nullptr)
+            for (int pad = 0; pad < sampler->getPadCount(); ++pad)
+                sampler->stopPad(pad);
 
     if (edit == nullptr)
         return;
@@ -1574,14 +1717,34 @@ juce::AudioDeviceManager& AudioEngine::getAudioDeviceManager()
 
 SamplerInstrument& AudioEngine::getSampler()
 {
-    jassert(sampler_ != nullptr);
-    return *sampler_;
+    const int activeGroup = groupManager != nullptr
+        ? groupManager->getActiveGroupIndex() : 0;
+    auto* sampler = getSamplerForGroup(activeGroup);
+    jassert(sampler != nullptr);
+    return *sampler;
 }
 
 const SamplerInstrument& AudioEngine::getSampler() const
 {
-    jassert(sampler_ != nullptr);
-    return *sampler_;
+    const int activeGroup = groupManager != nullptr
+        ? groupManager->getActiveGroupIndex() : 0;
+    auto* sampler = getSamplerForGroup(activeGroup);
+    jassert(sampler != nullptr);
+    return *sampler;
+}
+
+SamplerInstrument* AudioEngine::getSamplerForGroup(int groupIndex) noexcept
+{
+    if (groupIndex < 0 || groupIndex >= kSamplerGroupCount)
+        return nullptr;
+    return samplers_[static_cast<size_t>(groupIndex)].get();
+}
+
+const SamplerInstrument* AudioEngine::getSamplerForGroup(int groupIndex) const noexcept
+{
+    if (groupIndex < 0 || groupIndex >= kSamplerGroupCount)
+        return nullptr;
+    return samplers_[static_cast<size_t>(groupIndex)].get();
 }
 
 GroupManager& AudioEngine::getGroupManager()
@@ -1634,10 +1797,7 @@ const Arpeggiator& AudioEngine::getKeyboardArp() const
 
 float AudioEngine::getPadLevelDb(int padIndex) const
 {
-    if (sampler_ == nullptr)
-        return -100.0f;
-
-    return sampler_->getLevelDb(padIndex);
+    return getSampler().getLevelDb(padIndex);
 }
 
 AudioEngine::TransportSnapshot AudioEngine::getTransportSnapshot()
@@ -1709,9 +1869,52 @@ void AudioEngine::setSwingPercent(double percent)
 
 void AudioEngine::applySwingToSampler()
 {
-    if (sampler_ == nullptr)
-        return;
     const double percent = getSwingPercent();
     const float  strength = static_cast<float>((percent - 50.0) / 25.0);  // [0.0, 1.0]
-    sampler_->applySwing(strength);
+    for (auto& sampler : samplers_)
+        if (sampler != nullptr)
+            sampler->applySwing(strength);
+}
+
+bool AudioEngine::createSamplerGroup(int groupIndex)
+{
+    if (groupIndex < 0 || groupIndex >= kSamplerGroupCount)
+        return false;
+
+    auto& slot = samplers_[static_cast<size_t>(groupIndex)];
+    if (slot != nullptr)
+        return true;
+
+    slot = std::make_unique<SamplerInstrument>(*this, groupIndex);
+    if (edit == nullptr)
+        return true;
+
+    slot->attachToEdit(*edit);
+    for (int index = slot->getPadCount(); index < kInitialPadCount; ++index)
+        if (slot->addPad("Pad " + juce::String(index + 1)) < 0)
+            return false;
+
+    const double percent = getSwingPercent();
+    slot->applySwing(static_cast<float>((percent - 50.0) / 25.0));
+    return true;
+}
+
+void AudioEngine::removeSamplerGroup(int groupIndex)
+{
+    if (groupIndex < 0 || groupIndex >= kSamplerGroupCount)
+        return;
+
+    auto& slot = samplers_[static_cast<size_t>(groupIndex)];
+    if (slot != nullptr)
+        slot->removeFromEdit();
+    slot.reset();
+}
+
+void AudioEngine::resetSamplerGroups()
+{
+    for (int i = 1; i < kSamplerGroupCount; ++i)
+        samplers_[static_cast<size_t>(i)].reset();
+
+    if (samplers_[0] == nullptr)
+        samplers_[0] = std::make_unique<SamplerInstrument>(*this, 0);
 }

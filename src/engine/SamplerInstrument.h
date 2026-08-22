@@ -185,11 +185,13 @@ public:
         virtual void padStopped(int /*padIndex*/) {}
     };
 
-    explicit SamplerInstrument(AudioEngine& engine);
+    explicit SamplerInstrument(AudioEngine& engine, int groupIndex = 0);
     ~SamplerInstrument();
 
     void attachToEdit(te::Edit& edit);
     void detach();
+    void removeFromEdit();
+    [[nodiscard]] int getGroupIndex() const noexcept { return groupIndex_; }
 
     // Pad management
     int addPad(const juce::String& name = {});
@@ -477,6 +479,7 @@ public:
 
 private:
     AudioEngine& engine_;
+    int groupIndex_ { 0 };
     te::Edit* edit_ { nullptr };
     te::FolderTrack::Ptr folder_;
 

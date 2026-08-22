@@ -166,6 +166,25 @@ void PadOverviewWidget::onDeactivated()
     grid_.disableLedPublishing();
 }
 
+void PadOverviewWidget::onActiveSamplerAboutToChange()
+{
+    if (listeningForPadTriggers_)
+    {
+        engine().getSampler().removeListener(this);
+        listeningForPadTriggers_ = false;
+    }
+}
+
+void PadOverviewWidget::onActiveSamplerChanged()
+{
+    if (!listeningForPadTriggers_)
+    {
+        engine().getSampler().addListener(this);
+        listeningForPadTriggers_ = true;
+    }
+    refreshSnapshots();
+}
+
 // ── Resources ────────────────────────────────────────────────────────────────
 
 std::vector<std::string> PadOverviewWidget::requiredResources(int page)

@@ -126,6 +126,8 @@ private:
   void timerCallback() override;
   void editAboutToBeReplaced() override;
   void editReplaced() override;
+  void activeSamplerAboutToChange() override;
+  void activeSamplerChanged() override;
   void notifyStashedWidgets(bool beforeReplacement);
   void ensureSampleIndexer();
   void showSampleBrowser();

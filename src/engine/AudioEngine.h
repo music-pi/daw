@@ -22,6 +22,8 @@ public:
         virtual ~Listener() = default;
         virtual void editAboutToBeReplaced() {}
         virtual void editReplaced() {}
+        virtual void activeSamplerAboutToChange() {}
+        virtual void activeSamplerChanged() {}
     };
 
     enum class PlayMode
@@ -115,6 +117,8 @@ public:
 
     SamplerInstrument& getSampler();
     const SamplerInstrument& getSampler() const;
+    SamplerInstrument* getSamplerForGroup(int groupIndex) noexcept;
+    const SamplerInstrument* getSamplerForGroup(int groupIndex) const noexcept;
 
     GroupManager& getGroupManager();
     const GroupManager& getGroupManager() const;
@@ -190,7 +194,8 @@ private:
     juce::ValueTree uiState;
     juce::ValueTree settingsState;
 
-    std::unique_ptr<SamplerInstrument> sampler_;
+    static constexpr int kSamplerGroupCount = 8;
+    std::array<std::unique_ptr<SamplerInstrument>, kSamplerGroupCount> samplers_;
     std::unique_ptr<KeyboardInstrumentBank> keyboardBank_;
     std::unique_ptr<GroupManager> groupManager;
     std::unique_ptr<PluginConfigRegistry> pluginConfigRegistry_;
@@ -218,6 +223,11 @@ private:
     bool createCachedSampleFile(const te::AudioFile& source, const juce::File& destination);
 
     void applySwingToSampler();  // pushes current swing to all pad MidiClips
+    bool createSamplerGroup(int groupIndex);
+    void removeSamplerGroup(int groupIndex);
+    void resetSamplerGroups();
+
+    friend class GroupManager;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioEngine)
 };

@@ -56,6 +56,8 @@ public:
     /** Called after AudioEngine replaces its Edit and all Tracktion objects.
         Widgets may re-resolve stable IDs against the new Edit here. */
     virtual void onEditReplaced() {}
+    virtual void onActiveSamplerAboutToChange() {}
+    virtual void onActiveSamplerChanged() {}
 
     // ── Resource declaration ─────────────────────────────────────────────
 

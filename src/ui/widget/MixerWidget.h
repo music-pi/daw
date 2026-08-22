@@ -46,6 +46,8 @@ public:
     void onDeactivated() override;
     void onEditAboutToBeReplaced() override;
     void onEditReplaced() override;
+    void onActiveSamplerAboutToChange() override;
+    void onActiveSamplerChanged() override;
 
     std::vector<std::string> requiredResources(int page) override;
 

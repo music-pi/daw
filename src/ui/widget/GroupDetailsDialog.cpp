@@ -124,23 +124,7 @@ std::vector<Option> GroupDetailsDialog::getOptions(int /*page*/)
                     return;
 
                 auto& gm = engine().getGroupManager();
-                int currentActive = gm.getActiveGroupIndex();
-                if (currentActive >= 0)
-                    gm.saveCurrentState(currentActive);
-
-                auto& sampler = engine().getSampler();
-                auto* undoManager = &engine().getUndoManager();
-                undoManager->beginNewTransaction("Create Group");
-
-                for (int i = 0; i < sampler.getPadCount(); ++i)
-                {
-                    sampler.clearSample(i);
-                    sampler.setGainDb(i, 0.0f);
-                    sampler.setChokeGroupDirect(i, 0);
-                }
-
                 gm.createGroup(groupIndex_);
-                gm.saveCurrentState(groupIndex_);
 
                 auto* ch = controllerHost();
                 if (ch != nullptr)

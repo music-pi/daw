@@ -39,6 +39,8 @@ public:
     // ── Lifecycle ────────────────────────────────────────────────────────
     void onActivated(int panelOffset) override;
     void onDeactivated() override;
+    void onActiveSamplerAboutToChange() override;
+    void onActiveSamplerChanged() override;
 
     // ── Resources ────────────────────────────────────────────────────────
     std::vector<std::string> requiredResources(int page) override;

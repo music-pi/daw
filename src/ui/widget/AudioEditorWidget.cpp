@@ -118,6 +118,25 @@ void AudioEditorWidget::onDeactivated()
     }
 }
 
+void AudioEditorWidget::onActiveSamplerAboutToChange()
+{
+    if (listeningForPadTriggers_)
+    {
+        engine().getSampler().removeListener(this);
+        listeningForPadTriggers_ = false;
+    }
+}
+
+void AudioEditorWidget::onActiveSamplerChanged()
+{
+    if (!listeningForPadTriggers_)
+    {
+        engine().getSampler().addListener(this);
+        listeningForPadTriggers_ = true;
+    }
+    refreshState();
+}
+
 // -- Resources --
 
 std::vector<std::string> AudioEditorWidget::requiredResources(int page)

@@ -184,6 +184,8 @@ public:
     /** Notify every manager-owned widget before/after AudioEngine replaces its Edit. */
     void notifyEditAboutToBeReplaced();
     void notifyEditReplaced();
+    void notifyActiveSamplerAboutToChange();
+    void notifyActiveSamplerChanged();
 
     /** Flush any dirty LED state to the connected controller. */
     void flushHardwareState();
@@ -202,6 +204,7 @@ private:
     void closeSlot(int index);
     void claimResourcesForWidget(Widget& widget, int slotIdx);
     void releaseResourcesForWidget(Widget& widget);
+    void showGroupDetails(int groupIndex);
 
     HardwareState hardwareState_;
     AudioEngine* audioEngine_ = nullptr;
